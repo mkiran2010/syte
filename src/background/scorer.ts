@@ -78,6 +78,7 @@ export async function scoreReel(
         "content-type": "application/json",
         "x-api-key": settings.apiKey,
         "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
       },
       body: JSON.stringify(body),
       signal: controller.signal,

@@ -47,13 +47,17 @@ function Popup() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = async () => {
-    setTab(await getActiveTab());
-    const s = await send({ kind: "get-settings" });
-    if (s.kind === "settings") setSettings(s.settings);
-    const v = await send({ kind: "get-last-verdict" });
-    if (v.kind === "last-verdict") setVerdict(v.result);
-    const e = await send({ kind: "get-last-error" });
-    if (e.kind === "last-error") setError(e.error);
+    try {
+      setTab(await getActiveTab());
+      const s = await send({ kind: "get-settings" });
+      if (s.kind === "settings") setSettings(s.settings);
+      const v = await send({ kind: "get-last-verdict" });
+      if (v.kind === "last-verdict") setVerdict(v.result);
+      const e = await send({ kind: "get-last-error" });
+      if (e.kind === "last-error") setError(e.error);
+    } catch {
+      // SW idle / restart — silently retry on next tick
+    }
   };
 
   useEffect(() => {
