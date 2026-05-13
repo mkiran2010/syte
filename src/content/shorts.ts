@@ -151,6 +151,7 @@ function checkForNewActiveReel(): void {
     return;
   }
   if (id === lastTriggeredId) return;
+  console.log(`[feedfixer] new active reel detected: ${id}`);
   lastTriggeredId = id;
 
   // Attach the end-watcher IMMEDIATELY, don't wait for verdict.
