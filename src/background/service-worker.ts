@@ -3,6 +3,7 @@ import type { ScoredReel, SessionLock } from "../shared/types";
 import { loadSettings, saveSettings } from "../shared/settings";
 import { appendLog, clearLog, getLog } from "../shared/verdict-log";
 import { checkLocalAI, fetchMeta, scoreReel, triggerLocalAIDownload } from "./scorer";
+import { uploadVerdict } from "./upload";
 
 const LAST_VERDICT_KEY = "feedfixer.lastVerdict";
 const LAST_ERROR_KEY = "feedfixer.lastError";
@@ -70,23 +71,24 @@ async function handleScoreReel(videoId: string): Promise<ScoredReel> {
       reason: `metadata unavailable (${reason})`,
       scoredAt: Date.now(),
     };
-    await recordVerdict(result);
-    await appendLog({
+    const logEntry = {
       videoId,
       title: "(metadata unavailable)",
       channel: "(unknown)",
-      verdict: "Stay",
+      verdict: "Stay" as const,
       level: settings.currentLevel,
       customRule: settings.useCustomInstruction ? settings.customInstruction : null,
       scoredAt: result.scoredAt,
-    });
+    };
+    await recordVerdict(result);
+    await appendLog(logEntry);
+    if (settings.uploadEnabled) void uploadVerdict(logEntry);
     return result;
   }
 
   console.log(`[feedfixer] scoring ${videoId}: "${meta.title}" / ${meta.channel} @ level ${settings.currentLevel}`);
   const result = await scoreReel(meta, settings);
-  await recordVerdict(result);
-  await appendLog({
+  const logEntry = {
     videoId: meta.videoId,
     title: meta.title,
     channel: meta.channel,
@@ -94,7 +96,10 @@ async function handleScoreReel(videoId: string): Promise<ScoredReel> {
     level: settings.currentLevel,
     customRule: settings.useCustomInstruction ? settings.customInstruction : null,
     scoredAt: result.scoredAt,
-  });
+  };
+  await recordVerdict(result);
+  await appendLog(logEntry);
+  if (settings.uploadEnabled) void uploadVerdict(logEntry);
   await ensureLocked(
     settings.currentLevel,
     settings.useCustomInstruction ? settings.customInstruction : null,

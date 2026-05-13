@@ -275,6 +275,24 @@ function Options() {
         />
       </div>
 
+      <div className="toggle-row">
+        <div>
+          <label htmlFor="upload">Share classified-reel data</label>
+          <p className="hint">
+            Send each verdict to the FeedFixer database to help improve the filter. Each upload
+            includes: a random anonymous install ID, videoId, title, channel, verdict
+            (Junk/Stay), strictness level, and your custom rule if you set one. No identifying
+            data about you personally — but the videoId+title pair is public YouTube metadata.
+          </p>
+        </div>
+        <input
+          id="upload"
+          type="checkbox"
+          checked={settings.uploadEnabled}
+          onChange={() => update("uploadEnabled", !settings.uploadEnabled)}
+        />
+      </div>
+
       <div className="section-title">Classified-reel data</div>
       <p className="hint" style={{ marginBottom: 12 }}>
         Every reel scored is logged locally (max 1000 entries, oldest dropped). Each entry stores

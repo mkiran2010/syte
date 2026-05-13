@@ -28,6 +28,7 @@ export interface Settings {
   customInstruction: string;
   autoSkipEnabled: boolean;
   autoAdvanceOnEnd: boolean;
+  uploadEnabled: boolean;
 }
 
 export interface SessionLock {
@@ -70,4 +71,5 @@ export const DEFAULT_SETTINGS: Settings = {
   customInstruction: DEFAULT_CUSTOM_INSTRUCTION,
   autoSkipEnabled: true,
   autoAdvanceOnEnd: true,
+  uploadEnabled: true,
 };
