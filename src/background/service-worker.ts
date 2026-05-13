@@ -55,7 +55,34 @@ async function unlockSession(): Promise<void> {
 
 async function handleScoreReel(videoId: string): Promise<ScoredReel> {
   const settings = await loadSettings();
-  const meta = await fetchMeta(videoId);
+
+  // oEmbed refuses some videos (age-restricted, region-blocked, private).
+  // Default those to Stay so we don't auto-skip something we couldn't classify.
+  let meta;
+  try {
+    meta = await fetchMeta(videoId);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`[feedfixer] oembed refused ${videoId} (${reason}) — defaulting to Stay`);
+    const result: ScoredReel = {
+      videoId,
+      verdict: "Stay",
+      reason: `metadata unavailable (${reason})`,
+      scoredAt: Date.now(),
+    };
+    await recordVerdict(result);
+    await appendLog({
+      videoId,
+      title: "(metadata unavailable)",
+      channel: "(unknown)",
+      verdict: "Stay",
+      level: settings.currentLevel,
+      customRule: settings.useCustomInstruction ? settings.customInstruction : null,
+      scoredAt: result.scoredAt,
+    });
+    return result;
+  }
+
   console.log(`[feedfixer] scoring ${videoId}: "${meta.title}" / ${meta.channel} @ level ${settings.currentLevel}`);
   const result = await scoreReel(meta, settings);
   await recordVerdict(result);

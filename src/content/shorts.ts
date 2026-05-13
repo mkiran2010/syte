@@ -111,15 +111,15 @@ function attachWatcher(videoId: string): void {
 
 async function triggerScore(videoId: string): Promise<void> {
   if (scoredIds.has(videoId)) return;
-  scoredIds.add(videoId);
   console.log(`[feedfixer] requesting score for ${videoId}`);
   let reply;
   try {
     reply = await send({ kind: "score-reel", videoId });
   } catch (err) {
-    console.error(`[feedfixer] score-reel failed for ${videoId}:`, err);
-    return;
+    console.error(`[feedfixer] score-reel failed for ${videoId}, will retry on next reel-change:`, err);
+    return; // do NOT add to scoredIds — let the next trigger retry
   }
+  scoredIds.add(videoId);
   if (reply.kind !== "verdict") {
     console.warn(`[feedfixer] unexpected reply for ${videoId}:`, reply);
     return;
@@ -161,7 +161,7 @@ function checkForNewActiveReel(): void {
   triggerTimer = setTimeout(() => {
     triggerTimer = null;
     void triggerScore(id);
-  }, 400);
+  }, 150);
 }
 
 export function startReelWatcher(): void {
