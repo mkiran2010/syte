@@ -1,4 +1,4 @@
-import { skipInstagramReel } from "./instagram";
+import { skipInstagramReel, startInstagramWatcher } from "./instagram";
 import { detectPlatform } from "./platforms";
 import { startReelWatcher } from "./shorts";
 
@@ -10,14 +10,13 @@ switch (platform) {
     startReelWatcher();
     break;
   case "instagram":
-    console.log(
-      "[syte] instagram detected — press Ctrl+Shift+S anywhere on this page to test the skip button. The result logs here.",
-    );
+    startInstagramWatcher();
+    // Keep Ctrl+Shift+S for manual debugging in case the auto-loop misfires
     document.addEventListener("keydown", (e) => {
       if (e.ctrlKey && e.shiftKey && (e.key === "S" || e.key === "s")) {
         e.preventDefault();
         const result = skipInstagramReel();
-        console.log(`[syte] instagram skip result: ${result === null ? "null (no selector matched)" : `"${result}"`}`);
+        console.log(`[syte] manual instagram skip: ${result === null ? "null" : `"${result}"`}`);
       }
     });
     break;

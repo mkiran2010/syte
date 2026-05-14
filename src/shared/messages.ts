@@ -3,6 +3,7 @@ import type { LocalAIStatus, ScoredReel, SessionLock, Settings } from "./types";
 /** Messages from popup / content script → service worker */
 export type Msg =
   | { kind: "score-reel"; videoId: string }
+  | { kind: "score-meta"; videoId: string; title: string; channel: string; platform: string }
   | { kind: "get-settings" }
   | { kind: "set-settings"; settings: Partial<Settings> }
   | { kind: "get-last-verdict" }

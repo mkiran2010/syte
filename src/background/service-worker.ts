@@ -109,6 +109,37 @@ async function handleScoreReel(videoId: string): Promise<ScoredReel> {
   return result;
 }
 
+/** Score a reel using metadata supplied by the content script — no oEmbed call.
+ *  Used for platforms (Instagram, TikTok, X) that don't have a public oEmbed. */
+async function handleScoreMeta(
+  videoId: string,
+  title: string,
+  channel: string,
+): Promise<ScoredReel> {
+  const settings = await loadSettings();
+  console.log(`[syte] scoring (meta) ${videoId}: "${title}" / ${channel} @ level ${settings.currentLevel}`);
+  const result = await scoreReel({ videoId, title, channel }, settings);
+  const logEntry = {
+    videoId,
+    title,
+    channel,
+    verdict: result.verdict,
+    level: settings.currentLevel,
+    customRule: settings.useCustomInstruction ? settings.customInstruction : null,
+    scoredAt: result.scoredAt,
+  };
+  await recordVerdict(result);
+  await appendLog(logEntry);
+  if (settings.uploadEnabled) void uploadVerdict(logEntry);
+  await ensureLocked(
+    settings.currentLevel,
+    settings.useCustomInstruction ? settings.customInstruction : null,
+  );
+  await clearError();
+  console.log(`[syte] verdict ${videoId}: ${result.verdict}`);
+  return result;
+}
+
 chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
   void (async () => {
     try {
@@ -128,6 +159,16 @@ async function handle(msg: Msg): Promise<Reply> {
   switch (msg.kind) {
     case "score-reel": {
       const result = await handleScoreReel(msg.videoId);
+      const settings = await loadSettings();
+      return {
+        kind: "verdict",
+        result,
+        autoSkipEnabled: settings.autoSkipEnabled,
+        autoAdvanceOnEnd: settings.autoAdvanceOnEnd,
+      };
+    }
+    case "score-meta": {
+      const result = await handleScoreMeta(msg.videoId, msg.title, msg.channel);
       const settings = await loadSettings();
       return {
         kind: "verdict",
