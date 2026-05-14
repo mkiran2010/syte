@@ -10,12 +10,16 @@ switch (platform) {
     startReelWatcher();
     break;
   case "instagram":
-    // Expose the skip primitive on window so we can verify it from devtools.
-    // Run window.syteInstagramSkip() in the page console while watching a Reel.
-    (window as unknown as { syteInstagramSkip: () => string | null }).syteInstagramSkip = skipInstagramReel;
     console.log(
-      "[syte] instagram detected — to test the skip button, run window.syteInstagramSkip() in this console while watching a Reel.",
+      "[syte] instagram detected — press Ctrl+Shift+S anywhere on this page to test the skip button. The result logs here.",
     );
+    document.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === "S" || e.key === "s")) {
+        e.preventDefault();
+        const result = skipInstagramReel();
+        console.log(`[syte] instagram skip result: ${result === null ? "null (no selector matched)" : `"${result}"`}`);
+      }
+    });
     break;
   case "tiktok":
   case "x":
