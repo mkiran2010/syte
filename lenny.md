@@ -15,41 +15,44 @@ So the value prop is **disciplined doomscrolling**: you can't trust YouTube's al
 
 ---
 
-## 2. Repo state — branches and commits
+## 2. Repo state — current branch
 
 GitHub: <https://github.com/mkiran2010/syte> (private; renamed from `feedfixer` at v0.5.0)
 
-| Branch | Purpose |
-|---|---|
-| `main` | Minimal working baseline. Just a manual "Skip Short" button in the popup, no API. Has v0.1.0-tagged scaffold attempt + cleanup commits. Two commits total since the strip. |
-| `metadata-analysis` | The real product. YouTube auto-skip via Claude metadata classification, 1–10 strictness slider OR custom instruction mode, session lock, auto-advance on reel end, purple/black themed UI with Outfit font. **This is the working branch.** |
-| `multi-site` | Branched off `metadata-analysis` head (`bccda77`). Currently identical. Where the next work happens — adapting the extraction + skip pipeline to TikTok web, Instagram Reels web, and X video. After this, the same per-platform structure becomes the substrate for a local-model variant (CLIP/Transformers.js). |
-| `locality` | Branched off `multi-site`. **No Anthropic API.** Uses Chrome's built-in Prompt API (`LanguageModel` global, Gemini Nano, Chrome 138+). The API key field is gone, the model selector is gone, scoring is fully on-device and free. Manual skip button is back. Intended as the **first beta** for Chrome Web Store submission — see `PUBLISHING.md`. |
+Active branch: **`predictor`** (off `expansion`). Predictor is where the lookahead / next-reel pre-scoring work is happening. `expansion` was where multi-platform support landed.
+
+Platform status as of the last working session:
+- **YouTube Shorts** — working. URL polling + oEmbed metadata + Chrome on-device LanguageModel verdict + auto-skip via `#navigation-button-down`.
+- **Instagram Reels** — mostly working. URL polling on `/reels/{shortcode}/`, DOM-scraped caption + author (viewport-center video → tightly-scoped container heuristic), auto-skip via `aria-label` selector chain.
+- **TikTok** — sidelined. Stub adapter exists at [src/content/tiktok.ts](src/content/tiktok.ts) but FYP videoId extraction is unreliable. See coming_soon.md.
 
 **Confirm current branch with `git status` before assuming.**
 
 ---
 
-## 3. Architecture (metadata-analysis branch)
+## 3. Architecture
 
 ```
-┌─ content script ──────────────┐    ┌─ service worker ───────────┐    ┌─ Anthropic API ─┐
-│ (runs on youtube.com tabs)    │    │ (MV3 background worker)    │    │                 │
-│                               │    │                            │    │                 │
-│ poll URL every 500ms ────────▶│    │                            │    │                 │
-│ on new /shorts/{id}:          │    │                            │    │                 │
-│   - attach end-watcher        │    │                            │    │                 │
-│     (200ms setInterval)       │    │                            │    │                 │
-│   - send score-reel ─────────▶│ ── score-reel ──▶ fetchMeta ────┼──▶ youtube.com/oembed │
-│                               │                                  │    │                 │
-│                               │ ◀── verdict ──── scoreReel ◀────┼─── api.anthropic.com │
-│                               │                                  │    │ /v1/messages     │
-│ if Junk + autoSkip:           │                                  │    │                 │
-│   skipCurrentShort()          │                                  │    │                 │
-│ if Stay:                      │                                  │    │                 │
-│   keep watching, end-watcher  │                                  │    │                 │
-│   fires on loop boundary      │                                  │    │                 │
-└───────────────────────────────┘    └────────────────────────────┘    └─────────────────┘
+┌─ content script (per platform) ─┐    ┌─ service worker ──────────────────┐
+│ youtube / instagram / tiktok    │    │                                    │
+│                                 │    │                                    │
+│ detect platform → start watcher │    │                                    │
+│ poll for new active reel:       │    │                                    │
+│   YT: URL /shorts/{id}          │    │                                    │
+│   IG: URL /reels/{shortcode}    │    │                                    │
+│   TT: DOM-scraped link          │    │                                    │
+│                                 │    │                                    │
+│ on new reel:                    │    │ score-reel (YT, has oEmbed):       │
+│  - attach end-watcher (YT only) │    │   fetch youtube.com/oembed → meta  │
+│  - send score-reel ────────────▶│ ── │   call window.LanguageModel        │
+│  OR send score-meta ───────────▶│ ── │ score-meta (IG/TT, no oEmbed):     │
+│  (when caption + author already │    │   uses caller-supplied meta        │
+│   came from DOM)                │    │   call window.LanguageModel        │
+│                                 │    │                                    │
+│                          ◀──── verdict ──────                             │
+│ if Junk + autoSkip:             │    │ also: append to local log,         │
+│   click platform's next button  │    │ POST to Supabase if uploadEnabled  │
+└─────────────────────────────────┘    └────────────────────────────────────┘
                                             │
                                             ▼
                                      ┌─ popup ──────┐
@@ -59,41 +62,52 @@ GitHub: <https://github.com/mkiran2010/syte> (private; renamed from `feedfixer` 
                                      └───────────────┘
 ```
 
+Scoring is fully on-device via Chrome's built-in `window.LanguageModel` (Gemini Nano, Chrome 138+). No network calls for scoring; only oEmbed (YouTube metadata) and Supabase (anonymous verdict log) leave the browser.
+
 Key contracts:
 
-- **`chrome.runtime.sendMessage(msg)`** — content script → SW. The `send()` helper in `src/shared/messages.ts` is the single typed wrapper. Whenever you see "Uncaught (in promise) Error: no reply" in the console with a stack trace pointing at this function, it means the SW didn't respond (usually because the content script is orphaned after an extension reload — see §6 gotchas).
-- **`chrome.tabs.sendMessage`** — was popup → content for the manual skip. **Removed in `bccda77`** along with the manual button. Don't add it back unless the user asks.
-- **`chrome.storage.local`** — `Settings` (persistent, survives browser restart).
+- **`chrome.runtime.sendMessage(msg)`** — content script → SW. The `send()` helper in `src/shared/messages.ts` is the single typed wrapper. Two scoring messages: `score-reel` (videoId only — SW fetches oEmbed) for YouTube; `score-meta` (videoId + title + channel + platform) for everything else.
+- **`chrome.storage.local`** — `Settings`, install ID, verdict log (persistent, survives browser restart).
 - **`chrome.storage.session`** — `SessionLock`, `lastVerdict`, `lastError` (cleared on browser restart).
 
 ---
 
-## 4. File map (metadata-analysis branch)
+## 4. File map
 
 ```
 src/
 ├── background/
-│   ├── service-worker.ts   # message router, lock state, verdict storage
-│   └── scorer.ts           # oembed fetch + Claude API (raw fetch, no SDK)
+│   ├── service-worker.ts   # message router, lock state, verdict storage, log + upload
+│   ├── scorer.ts           # oembed fetch + on-device LanguageModel call (stateless per call)
+│   └── upload.ts           # fire-and-forget POST to Supabase
 ├── content/
-│   ├── index.ts            # boots the watcher
-│   └── shorts.ts           # reel detection, skipCurrentShort(), end-watcher
+│   ├── index.ts            # platform router — picks the right watcher
+│   ├── platforms.ts        # detectPlatform() from window.location.hostname
+│   ├── shorts.ts           # YouTube watcher
+│   ├── instagram.ts        # Instagram watcher (DOM-scraped meta)
+│   └── tiktok.ts           # TikTok watcher (sidelined — FYP videoId broken)
 ├── shared/
-│   ├── messages.ts         # Msg / Reply types + send() helper
+│   ├── messages.ts         # Msg / Reply types + send() helper, VerdictLogEntry
 │   ├── settings.ts         # chrome.storage.local helpers
-│   └── types.ts            # Settings, ScoredReel, SessionLock, DEFAULT_*
+│   ├── types.ts            # Settings, ScoredReel, SessionLock, DEFAULT_*
+│   ├── install-id.ts       # persistent UUID per install (anonymous Supabase key)
+│   ├── verdict-log.ts      # local rolling log (1000 entries cap)
+│   ├── reel-url.ts         # buildReelUrl(platform, videoId) → canonical URL
+│   └── supabase-config.ts  # SUPABASE_URL + publishable key
 └── ui/
     ├── popup.html / popup.tsx     # slider, lock, verdict card, auto-skip toggle
-    ├── options.html / options.tsx # API key, mode toggle, stages, custom rule, rubric
+    ├── options.html / options.tsx # mode toggle, stages, custom rule, upload opt-out
     └── styles.css                  # purple/black theme, Outfit font from Google Fonts
 
-manifest.json   # MV3, host_perms for youtube.com + api.anthropic.com, no activeTab/no tabs
-package.json    # vite + crxjs + react. NO @anthropic-ai/sdk anymore (raw fetch).
+manifest.json   # MV3, host_perms for youtube/instagram/tiktok/x + Supabase
+package.json    # vite + crxjs + react. NO Anthropic SDK (we're fully on-device).
 vite.config.ts  # crxjs handles HTML entries via manifest. Don't add rollupOptions.input
                 # (it conflicts with crxjs html plugin and 400s the build).
 
 research/
-└── lookahead.md   # plan for pre-scoring next reels in the queue (not implemented)
+├── lookahead.md      # plan for pre-scoring next reels — ACTIVELY being implemented on predictor branch
+├── platforms.md      # per-platform DOM notes (TikTok worklist still open)
+└── data-collection.md # supabase schema notes
 ```
 
 ---
@@ -123,30 +137,38 @@ Skip any of these → user reports "nothing happens" → 30 minutes of debugging
 
 ## 6. Known gotchas (real ones from this session)
 
-1. **"Could not establish connection. Receiving end does not exist."** → content script in target tab is orphaned after extension reload. User must reload the YouTube tab. This was the #1 cause of "nothing works" reports.
+1. **"Could not establish connection / Extension context invalidated."** → content script in target tab is orphaned after extension reload. User must reload the tab. This was the #1 cause of "nothing works" reports — every code change requires the **two-step**: reload the extension card AND reload the open tab. The orphaned content script will spam this error on every action; we don't currently detect this and stop polling, which is a known noise problem.
 
-2. **Anthropic API CORS 401** — when calling `https://api.anthropic.com/v1/messages` from any browser context (including MV3 service worker), you MUST set the header `anthropic-dangerous-direct-browser-access: true`. The SDK sets this automatically when `dangerouslyAllowBrowser: true`; raw fetch does not. We use raw fetch — make sure the header is there.
+2. **Chrome on-device LanguageModel session reuse is a trap.** A reused `LanguageModel` session accumulates conversation history and the classification gradually corrupts. **Always create a fresh session per call** with `await LanguageModel.create({...})` and `session.destroy()` in a finally. Stateless wins.
 
-3. **Anthropic SDK in MV3 service worker is a debugging tarpit.** It works, but adds 56KB and obscures errors. We dropped it in favor of raw `fetch()`. SW bundle went from 56KB → ~4KB. Keep it that way.
+3. **`window.ytInitialData` requires the main world.** Content scripts run in an isolated world, so `window.ytInitialData` is `undefined`. We use the public oEmbed endpoint instead — auth-free for YouTube, gives title + author_name only.
 
-4. **`window.ytInitialData` requires the main world.** Content scripts run in an isolated world by default, so `window.ytInitialData` is `undefined` from the content script. Use `world: "MAIN"` in the manifest content_scripts entry, OR scrape the `<script>` tag, OR (what we do) use the public oEmbed endpoint. oEmbed is auth-free for YouTube but only gives title + author_name (no description, view count, tags).
+4. **No window-level helpers from content scripts.** Isolated-world content scripts can't expose functions to `window` for the page console. We use `Ctrl+Shift+S` keyboard listeners (Instagram + TikTok) for manual debug skip.
 
-5. **YouTube Shorts URL = source of truth for videoId.** `/shorts/{11-char-id}` always reflects the active reel. Polling URL every 500ms is more reliable than DOM mutation observers on `[is-active]`.
+5. **YouTube Shorts URL = source of truth for videoId.** `/shorts/{11-char-id}` always reflects the active reel. URL polling every 500ms is more reliable than DOM mutation observers on `[is-active]`.
 
-6. **The Skip primitive — three fallbacks in order:**
-   - Click `#navigation-button-down button` (YouTube's own arrow — most reliable, triggers their handlers)
-   - Dispatch synthetic `ArrowDown` keydown
-   - `nextElementSibling.scrollIntoView()` on the active reel renderer
+6. **Instagram URL also works** — `/reels/{shortcode}/` updates as you scroll. Polling pattern same as YouTube.
 
-7. **Auto-advance must attach IMMEDIATELY on reel change, not after the verdict.** The previous version waited for the API round-trip + a 250ms timeout, by which time the user had already finished watching. Now: attach a `setInterval(200ms)` watcher the moment a new reel is detected, regardless of verdict. Detect loop via either `currentTime < lastTime - 1` (backward jump) or `duration - currentTime < 0.3` (near-end). Detach on URL change.
+7. **TikTok URL does NOT update on FYP scroll** — `/foryou` stays at root `/`. Need DOM-walk fallback to find the active video's `<a href="/@user/video/{id}">`. Currently broken on FYP. See `src/content/tiktok.ts`.
 
-8. **Vite + crxjs config:** Do NOT put HTML entries in `rollupOptions.input`. crxjs picks them up from the manifest. Doubling them up breaks the html plugin with a confusing "replacement content must be a string" error.
+8. **Skip primitives per platform** (selector chains in code, all with keydown ArrowDown fallback):
+   - **YouTube:** `#navigation-button-down button` first.
+   - **Instagram:** `button[aria-label*="Next" i]` and similar.
+   - **TikTok:** `[class*="DivFeedNavigationContainer"]` last button (TUX class names rotate but the container fragment stays).
 
-9. **package.json self-reference:** A linter (likely the user's IDE) keeps adding `"syte": "file:"` (formerly `"feedfixer": "file:"`) to dependencies. The system tells me this is intentional. **Leave it alone.** Don't try to remove it — it'll come back.
+9. **Auto-advance on Stay (YouTube only) must attach IMMEDIATELY on reel change, not after the verdict.** Attach a `setInterval(200ms)` end-watcher the moment a new reel is detected. Detect loop via `currentTime < lastTime - 1` or `duration - currentTime < 0.3`. Detach on URL change.
 
-10. **Lock state is in `chrome.storage.session`** so it auto-clears on browser restart but persists across SW unloads. The first successful score-reel call sets `SessionLock` if it doesn't exist. Slider in popup and stage editors in options are disabled when locked.
+10. **Cold-start is ~15s on the first reel of a session** — that's `LanguageModel.create()` warming up Gemini Nano. Pre-warming on `/shorts/` page load is in `coming_soon.md` (#4).
 
-11. **Custom instruction mode bypasses the stage system entirely.** When `useCustomInstruction === true`, scorer uses `customInstruction` text directly in place of the stage description. UI must hide/show the right controls.
+11. **Vite + crxjs config:** Do NOT put HTML entries in `rollupOptions.input`. crxjs picks them up from the manifest. Doubling them up breaks the html plugin.
+
+12. **package.json self-reference:** A linter keeps adding `"syte": "file:"` to dependencies. **Leave it alone.** Don't remove it — it comes back.
+
+13. **Lock state is in `chrome.storage.session`** — auto-clears on browser restart but persists across SW unloads. Slider in popup and stage editors in options are disabled when locked.
+
+14. **Custom instruction mode bypasses the stage system entirely.** When `useCustomInstruction === true`, scorer uses `customInstruction` text directly. UI must hide/show the right controls.
+
+15. **Extension context invalidated noise** — when the SW dies, the orphaned content script keeps trying `sendMessage` on every reel change and prints stack traces. Open backlog item: detect once, log a single "extension was reloaded — refresh tab" line, then stop polling.
 
 ---
 
@@ -180,29 +202,24 @@ Skip any of these → user reports "nothing happens" → 30 minutes of debugging
 
 ## 8. Roadmap / future ambitions
 
-Captured in `research/lookahead.md` and in the conversation history:
+See `coming_soon.md` for the prioritized backlog. Highlights:
 
-### Near-term (multi-site branch — what's next)
-- Detect site (`youtube.com` / `tiktok.com` / `instagram.com` / `x.com`) at content-script init.
-- Adapter pattern: each platform has its own `extractMeta()` and `skipCurrent()` implementation. Shared verdict path stays the same.
-- TikTok web: For You feed scrapes via DOM (TikTok actively breaks scrapers — accept fragility).
-- Instagram Reels web: similar, fragile.
-- X video feed: x.com DOM is hookable.
-- Mobile (where doomscrolling actually happens) is **out of scope** — no extension surface, would need an Android Accessibility Service in a separate native app. v3 problem.
+### Active on this branch (predictor)
+- **Lookahead scoring** (`research/lookahead.md`): pre-score the next 1–2 reels in the DOM queue while the user watches the current one. Eliminates the visible auto-skip jump. SW-side verdict cache + content-script sibling extraction. This is the headline v2 feature.
 
-### Medium-term (after multi-site lands)
-- **Lookahead scoring** (`research/lookahead.md`): score the next 1–2 reels in the DOM queue while the user watches the current one. Eliminates the visible auto-skip jump. Implementation sketch in that file.
-- **Local model variant**: replace the Claude API call with a local Transformers.js + CLIP inference on a captured video frame. Pros: zero per-call cost, zero data leaves the browser. Cons: 80–150MB one-time model download, ~500ms per inference, classification accuracy is rougher. The multi-site adapter pattern is what makes this swap clean — just swap the scorer module.
+### Sidelined for now
+- **TikTok adapter.** Stub at [src/content/tiktok.ts](src/content/tiktok.ts) works on profile pages (`/@user/video/X`) but breaks on FYP because TikTok's URL stays at `/` and the DOM-walk to find the videoId via `a[href*="/video/"]` returned nothing in the last test. Will need to investigate the FYP DOM (likely a `data-*` attribute or the `__UNIVERSAL_DATA_FOR_REHYDRATION__` JSON blob). Coming soon, not blocking.
 
-### Long-term
-- **Chrome Web Store publication.** See `PUBLISHING.md` (on `locality` branch) for the full playbook. The `locality` branch is the intended submission candidate because it has no API key (cleaner permission story, easier review). Pre-flight blockers: icons, privacy policy URL, screenshots, detailed description.
-- **Cost dashboard in the popup** — surface input/output tokens, estimated $/day, cache hit rate. Useful once usage scales.
-- **Watch-time analytics** — show "you saved X minutes this week" to make the value tangible.
+### After lookahead lands
+- **Pre-warm Gemini Nano** on `/shorts/` page load — fixes the 15s cold-start on the first reel.
+- **Channel allowlist / blocklist** — pin trusted channels (skip the LLM, always Stay), instant verdict.
+- **"Wrong call?" feedback button** in the popup recent-reels list — feeds a corrections table.
+- **Web Store publication.** See `PUBLISHING.md`. Pre-flight blockers: icons, privacy policy URL, screenshots, detailed description.
 
 ### Explicitly NOT roadmap
-- Don't reintroduce the manual skip button on metadata-analysis. User asked for its removal.
-- Don't reintroduce the homepage tile filter. The v0.1.0 attempt did this and it was a failure. Shorts is the only surface that matters right now.
+- Don't reintroduce the homepage tile filter. The v0.1.0 attempt did this and it was a failure. Shorts/Reels are the only surfaces that matter.
 - Don't add screen-time pause / focus-mode features yet — adjacent but out of scope.
+- Mobile native apps are not in reach without jailbreak (see iOS feasibility note from the predictor session). Mobile-web in Safari with a Foundation Models bridge is the only realistic iOS path; deferred.
 
 ---
 

@@ -1,6 +1,20 @@
 # Syte — Patch Notes
 
-## v0.2.0 — Strip to working baseline
+## v0.3.0 — Cross-platform + Supabase analytics
+
+Expanded scoring beyond YouTube Shorts to **Instagram Reels** and **TikTok**, and started shipping verdicts to Supabase for offline analysis.
+
+### What works
+
+- **Instagram Reels** — full parity with the YouTube flow. Detects the viewport-center reel, extracts caption + author from the DOM, sends `score-meta` to the service worker, and auto-skips when the verdict comes back as `Junk`. Ctrl+Shift+S still works as a manual fallback.
+- **TikTok (per-video pages)** — `/@user/video/{id}` URLs work end-to-end: metadata extraction, scoring, and auto-skip all behave.
+- **Supabase verdict export** — every verdict (junk/stay) is uploaded with `install_id`, `video_id`, `title`, `channel`, `verdict`, `level`, `custom_rule`, `scored_at`, `platform`, and `reel_url`. Fire-and-forget; upload failures never block scoring. Lets us analyze junk-vs-stay distributions across platforms.
+
+### What's in progress
+
+- **TikTok FYP (`/foryou`)** — auto-skip is unreliable here. The down-arrow button's class hashes and DOM position rotate while the feed scrolls, so the click target is hard to time and track. Manual Ctrl+Shift+S sometimes hits, sometimes doesn't. We currently target `[class*="DivFeedNavigationContainer"]` with positional fallbacks, but TikTok re-renders the container faster than we can lock onto it. Per-video pages stay stable, so those are the supported surface for now.
+
+
 
 Removed everything that wasn't reliably working. Kept only the manual-skip feature, which is verified working end-to-end.
 

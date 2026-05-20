@@ -1,6 +1,7 @@
 import { skipInstagramReel, startInstagramWatcher } from "./instagram";
 import { detectPlatform } from "./platforms";
 import { startReelWatcher } from "./shorts";
+import { skipTikTokReel, startTikTokWatcher } from "./tiktok";
 
 const platform = detectPlatform();
 console.log(`[syte] content script loaded on ${window.location.pathname} — platform: ${platform}`);
@@ -21,6 +22,15 @@ switch (platform) {
     });
     break;
   case "tiktok":
+    startTikTokWatcher();
+    document.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === "S" || e.key === "s")) {
+        e.preventDefault();
+        const result = skipTikTokReel();
+        console.log(`[syte] manual tiktok skip: ${result === null ? "null" : `"${result}"`}`);
+      }
+    });
+    break;
   case "x":
     console.log(
       `[syte] platform "${platform}" detected but not yet implemented — see research/platforms.md.`,

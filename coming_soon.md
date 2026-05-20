@@ -1,10 +1,10 @@
 # Coming soon — roadmap
 
-Active backlog of Syte improvements, ranked by perceived impact. Captured 2026-05-13 after the first end-to-end Supabase data collection went live.
+Active backlog of Syte improvements, ranked by perceived impact. Captured 2026-05-13 after the first end-to-end Supabase data collection went live; updated 2026-05-15 when the `predictor` branch took up lookahead.
 
 ## Tier 1 — biggest perceptual leaps
 
-### 1. Lookahead scoring
+### 1. Lookahead scoring — IN PROGRESS on `predictor` branch
 Score the next 1–2 reels in the queue while you watch the current one. Junk reels skip with **zero visible flicker** because the verdict is already cached when they become active. This is the single biggest UX upgrade left.
 
 - Implementation outline: `research/lookahead.md`
@@ -35,8 +35,10 @@ First-install popup explaining: how strictness works, why you should pick a leve
 ### 7. Web Store publication
 See `PUBLISHING.md`. Need icon polish, privacy policy hosted at a stable URL, screenshots, ~3–7 day review.
 
-### 8. Multi-site (TikTok, Instagram Reels, X)
-Already on the `multi-site` branch as a stub. The skip primitive + scoring pipeline is reusable; just needs per-site DOM extraction. TikTok is the obvious next target since it's the canonical brainrot platform.
+### 8. TikTok (sidelined)
+Stub adapter shipped at `src/content/tiktok.ts`. Working on profile pages (`/@user/video/X`), broken on the For You feed because the URL stays at `/` and DOM-walk to find a `/video/X` anchor returned nothing in the last test. Likely fix paths: scrape a `data-*` attribute on the video card, or read the `__UNIVERSAL_DATA_FOR_REHYDRATION__` JSON blob TikTok hydrates with. Resume after lookahead lands.
+
+Instagram Reels and YouTube Shorts already work on `expansion`. X (Twitter) video filtering remains unscoped — it's a tweet-based feed, fundamentally different shape than the other three.
 
 ### 9. Time-based modes
 "Strict mode 10pm–6am" — can't loosen at night when willpower's lowest. Discipline feature, fits the original product framing.
@@ -54,8 +56,9 @@ Once ~1000 users have contributed data, statistically derive a "what most people
 
 Ship in this order:
 
-1. **Pre-warm fix** (#4) — ~20 lines, fixes the 15s cold start
-2. **Lookahead scoring** (#1) — eliminates visible-skip lag
-3. **Channel allowlist** (#2) — makes the filter feel personal + fast
+1. **Lookahead scoring** (#1) — *currently being built on `predictor` branch.* Eliminates visible-skip lag.
+2. **Pre-warm fix** (#4) — ~20 lines, fixes the 15s cold start. Natural follow-up to lookahead since both touch the SW + content-script wiring.
+3. **Channel allowlist** (#2) — makes the filter feel personal + fast.
+4. **TikTok FYP fix** (#8) — once the predictor work is stable, return to TikTok.
 
-After those three, the product feels qualitatively different. Then fork: Web Store launch as v1.0, OR push into multi-site / community features.
+After those, the product feels qualitatively different. Then fork: Web Store launch as v1.0, OR push into community features.

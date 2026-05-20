@@ -12,8 +12,8 @@ This is the plain-language summary of what Syte does and doesn't do with your da
 
 ## What gets sent over the network
 
-### To YouTube (`youtube.com/oembed`)
-For each Short you scroll, we ask YouTube's public oEmbed endpoint for the title and channel name. This is the same data anyone visiting that video sees. No identifying information about you is sent — it's just a request for public metadata.
+### To Media 
+For each Short, Reel, or TikTok you scroll, we ask the platform's public oEmbed endpoint for the title and channel name. This is the same data anyone visiting that video sees. No identifying information about you is sent — it's just a request for public metadata.
 
 ### To Chrome's on-device AI
 The title and channel get classified by Gemini Nano, which **runs entirely on your device**. Nothing about the video, your settings, or your activity is sent to Google during this step.
